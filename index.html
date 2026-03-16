@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GT7 Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #0f0f0f;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #ffffff;
+            margin: 10px 0 20px 0;
+            font-size: 1.5em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            width: 100%;
+            max-width: 600px;
+        }
+        .card {
+            background-color: #1e1e1e;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .card-full {
+            grid-column: 1 / -1;
+        }
+        .value {
+            font-size: 3em;
+            font-weight: 800;
+            margin: 5px 0;
+            color: #ffffff;
+            font-variant-numeric: tabular-nums;
+        }
+        .value-small {
+            font-size: 2em;
+        }
+        .label {
+            color: #aaaaaa;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        .gear-display {
+            font-size: 4em;
+            color: #ff3b30;
+        }
+        .bar-container {
+            width: 100%;
+            height: 25px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            margin-top: 8px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .bar {
+            height: 100%;
+            width: 0%;
+            transition: width 0.05s linear;
+        }
+        .bar-throttle { background-color: #34c759; }
+        .bar-brake { background-color: #ff3b30; }
+        .bar-clutch { background-color: #0a84ff; }
+        
+        .tire-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .tire {
+            background-color: #2a2a2a;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .tire-label {
+            font-size: 0.6em;
+            color: #888;
+            display: block;
+        }
+        
+        .track-map-container {
+            grid-column: 1 / -1; /* span full width */
+            background-color: #1e1e1e;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #trackMap {
+            width: 100%;
+            max-width: 500px;
+            height: 300px;
+            background-color: #111;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        .status {
+            position: absolute;
+            top: 10px;
+
+            right: 10px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ff3b30; /* Disconnected */
+        }
+        .status.connected {
+            background-color: #34c759;
+            box-shadow: 0 0 10px #34c759;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="connection-status" class="status"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 600px; margin: 10px 0 20px 0;">
+        <h1 style="margin: 0;">GT7 Telemetry <span id="car-name" style="font-size: 0.6em; color: #aaa; margin-left: 10px;"></span></h1>
+        <a href="/analysis" style="color: #0a84ff; text-decoration: none; font-weight: bold;">Post-Race Analysis →</a>
+    </div>
+
+    <div class="dashboard">
+        <div class="card">
+            <div class="label">Speed (KM/H)</div>
+            <div class="value" id="speed">-</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Gear</div>
+            <div class="value gear-display" id="gear">-</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Engine RPM</div>
+            <div class="value value-small" id="rpm">-</div>
+        </div>
+
+        <div class="card card-full">
+            <div class="label">Throttle</div>
+            <div class="bar-container">
+                <div class="bar bar-throttle" id="bar-throttle"></div>
+            </div>
+            
+            <div class="label">Brake</div>
+            <div class="bar-container">
+                <div class="bar bar-brake" id="bar-brake"></div>
+            </div>
+
+            <div class="label">Clutch</div>
+            <div class="bar-container" style="margin-bottom: 0;">
+                <div class="bar bar-clutch" id="bar-clutch"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="label">Lap</div>
+            <div class="value value-small" id="current_lap">-</div>
+        </div>
+        
+        <div class="card">
+            <div class="label">Fuel Remaining</div>
+            <div class="value value-small" id="fuel">-</div>
+        </div>
+        
+        <div class="card card-full" style="padding: 10px;">
+            <div class="label">Lap Times</div>
+            <div style="display: flex; justify-content: space-around; width: 100%; margin-top: 10px;">
+                <div style="text-align: center;">
+                    <div class="label">Current Lap</div>
+                    <div class="value value-small" id="current_lap_time" style="color: #0a84ff;">00:00.000</div>
+                </div>
+                <div style="text-align: center;">
+                    <div class="label">Last Lap</div>
+                    <div class="value value-small" id="last_lap_time">--:--.---</div>
+                </div>
+                <div style="text-align: center;">
+                    <div class="label">Best Lap</div>
+                    <div class="value value-small" id="best_lap_time" style="color: #cc73e1;">--:--.---</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-full">
+            <div class="label">Tire Temperatures (°C)</div>
+            <div class="tire-grid">
+                <div class="tire" id="tire_fl_box"><span class="tire-label">FL</span><span id="tire_fl">-</span></div>
+                <div class="tire" id="tire_fr_box"><span class="tire-label">FR</span><span id="tire_fr">-</span></div>
+                <div class="tire" id="tire_rl_box"><span class="tire-label">RL</span><span id="tire_rl">-</span></div>
+                <div class="tire" id="tire_rr_box"><span class="tire-label">RR</span><span id="tire_rr">-</span></div>
+            </div>
+            <div style="width: 100%; height: 120px; margin-top: 15px;">
+                <canvas id="tireTempChart"></canvas>
+            </div>
+        </div>
+
+        <div class="track-map-container">
+            <div class="label" id="track-name-label" style="margin-bottom: 10px;">Track Map (Waiting for Lap 1...)</div>
+            <canvas id="trackMap"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // Lap Time Formatting
+        function formatTime(ms) {
+            if (ms <= 0 || ms === undefined) return "--:--.---";
+            let date = new Date(ms);
+            let m = date.getUTCMinutes().toString().padStart(2, '0');
+            let s = date.getUTCSeconds().toString().padStart(2, '0');
+            let mls = date.getUTCMilliseconds().toString().padStart(3, '0');
+            return `${m}:${s}.${mls}`;
+        }
+
+        // Lap Times State
+        let currentLapTimeMs = 0;
+        let previousLap = -1;
+        let previousTimeOfDayMs = -1;
+
+        // Tire Temp Chart Setup
+        const tireCtx = document.getElementById('tireTempChart').getContext('2d');
+        const tireChart = new Chart(tireCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'FL', borderColor: '#ffcc00', data: [], borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                    { label: 'FR', borderColor: '#ff9500', data: [], borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                    { label: 'RL', borderColor: '#34c759', data: [], borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                    { label: 'RR', borderColor: '#30b0c7', data: [], borderWidth: 2, pointRadius: 0, tension: 0.1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                    legend: { display: true, labels: { color: '#aaa', boxWidth: 10, font: { size: 10 } } }
+                },
+                scales: {
+                    x: { display: false },
+                    y: { 
+                        display: true, 
+                        position: 'right',
+                        grid: { color: '#333' }, 
+                        ticks: { color: '#888', font: { size: 10 } } 
+                    }
+                }
+            }
+        });
+        
+        const MAX_CHART_POINTS = 200;
+        let chartTickCounter = 0;
+
+        // Track Map Drawing State
+        const canvas = document.getElementById('trackMap');
+        const ctx = canvas.getContext('2d');
+        let points = [];
+        let minX = 999999, maxX = -999999, minZ = 999999, maxZ = -999999;
+        
+        // Ensure canvas dimensions match CSS
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+
+        function connect() {
+            const ws = new WebSocket(`ws://${window.location.host}/ws`);
+            const statusIndicator = document.getElementById('connection-status');
+
+            ws.onopen = function() {
+                console.log("Connected to server");
+                statusIndicator.classList.add('connected');
+                // Reset points on new connection just in case
+                points = [];
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            };
+
+            ws.onclose = function() {
+                console.log("Disconnected from server");
+                statusIndicator.classList.remove('connected');
+                setTimeout(connect, 2000); // Reconnect attempt
+            };
+
+            ws.onerror = function(err) {
+                console.error("WebSocket error", err);
+                ws.close();
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                // Track Info
+                if (data.track_name !== undefined) {
+                    document.getElementById('track-name-label').innerText = `Track Map (${data.track_name})`;
+                }
+
+                // Track Map Drawing (Using X and Z for top-down view)
+                if (data.position_x !== undefined && data.position_z !== undefined && data.speed_mps > 1.0) {
+                    let px = data.position_x;
+                    let pz = data.position_z;
+                    
+                    points.push({x: px, z: pz});
+                    
+                    // Update bounds
+                    if (px < minX) minX = px;
+                    if (px > maxX) maxX = px;
+                    if (pz < minZ) minZ = pz;
+                    if (pz > maxZ) maxZ = pz;
+
+                    // Redraw map
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    let rangeX = maxX - minX;
+                    let rangeZ = maxZ - minZ;
+                    
+                    // Add padding
+                    let padding = 20;
+                    let drawWidth = canvas.width - (padding * 2);
+                    let drawHeight = canvas.height - (padding * 2);
+                    
+                    // Keep aspect ratio
+                    let scale = Math.min(drawWidth / (rangeX || 1), drawHeight / (rangeZ || 1));
+                    
+                    let offsetX = (canvas.width - (rangeX * scale)) / 2;
+                    let offsetZ = (canvas.height - (rangeZ * scale)) / 2;
+
+                    // Draw path
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#34c759';
+                    ctx.lineWidth = 2;
+                    
+                    for (let i = 0; i < points.length; i++) {
+                        let drawX = offsetX + (points[i].x - minX) * scale;
+                        // Z is inverted in usual 3D->2D top down mappings
+                        let drawZ = canvas.height - (offsetZ + (points[i].z - minZ) * scale);
+                        
+                        if (i === 0) {
+                            ctx.moveTo(drawX, drawZ);
+                        } else {
+                            ctx.lineTo(drawX, drawZ);
+                        }
+                    }
+                    ctx.stroke();
+                    
+                    // Draw current car position (red dot)
+                    if (points.length > 0) {
+                        let lastPoint = points[points.length - 1];
+                        let drawX = offsetX + (lastPoint.x - minX) * scale;
+                        let drawZ = canvas.height - (offsetZ + (lastPoint.z - minZ) * scale);
+                        
+                        ctx.beginPath();
+                        ctx.arc(drawX, drawZ, 5, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#ff3b30';
+                        ctx.fill();
+                    }
+                }
+
+                // Car Name
+                if (data.car_name !== undefined) {
+                    document.getElementById('car-name').innerText = data.car_name;
+                }
+
+                // Speed
+                if (data.speed_kph !== undefined) {
+                    document.getElementById('speed').innerText = Math.round(data.speed_kph);
+                } else if (data.speed_mps !== undefined) {
+                    document.getElementById('speed').innerText = Math.round(data.speed_mps * 3.6);
+                }
+
+                // Gear
+                if (data.current_gear !== undefined) {
+                    let gear = data.current_gear;
+                    if (gear === 0) gear = "N";
+                    if (gear === 15) gear = "R";
+                    document.getElementById('gear').innerText = gear;
+                }
+
+                // RPM
+                if (data.engine_rpm !== undefined) {
+                    document.getElementById('rpm').innerText = Math.round(data.engine_rpm);
+                }
+
+                // Throttle (0-255)
+                if (data.throttle !== undefined) {
+                    const pct = (data.throttle / 255) * 100;
+                    document.getElementById('bar-throttle').style.width = pct + "%";
+                }
+
+                // Brake (0-255)
+                if (data.brake !== undefined) {
+                    const pct = (data.brake / 255) * 100;
+                    document.getElementById('bar-brake').style.width = pct + "%";
+                }
+
+                // Clutch (0.0 - 1.0)
+                if (data.clutch_pedal !== undefined) {
+                    const pct = data.clutch_pedal * 100;
+                    document.getElementById('bar-clutch').style.width = pct + "%";
+                }
+
+                // Laps
+                if (data.current_lap !== undefined && data.total_laps !== undefined) {
+                    document.getElementById('current_lap').innerText = `${data.current_lap}/${data.total_laps}`;
+                }
+
+                // Fuel
+                if (data.fuel_level !== undefined && data.fuel_capacity !== undefined) {
+                    const fuel_pct = (data.fuel_level / data.fuel_capacity) * 100;
+                    document.getElementById('fuel').innerText = `${fuel_pct.toFixed(1)}%`;
+                }
+
+                // Lap Times Logic
+                if (data.best_lap_time_ms !== undefined) {
+                    document.getElementById('best_lap_time').innerText = formatTime(data.best_lap_time_ms);
+                }
+                if (data.last_lap_time_ms !== undefined) {
+                    document.getElementById('last_lap_time').innerText = formatTime(data.last_lap_time_ms);
+                }
+
+                // Calculate running current lap time
+                if (data.is_paused === true || data.is_paused === "true") {
+                    if (data.time_of_day_ms !== undefined) previousTimeOfDayMs = data.time_of_day_ms;
+                } else if (data.current_lap !== undefined && data.time_of_day_ms !== undefined) {
+                    if (data.current_lap !== previousLap) {
+                        currentLapTimeMs = 0;
+                        previousLap = data.current_lap;
+                        previousTimeOfDayMs = data.time_of_day_ms;
+                    } else {
+                        if (previousTimeOfDayMs !== -1) {
+                            let dt = data.time_of_day_ms - previousTimeOfDayMs;
+                            if (dt < 0) dt += 86400000; // Handle midnight wrap (24h)
+                            currentLapTimeMs += dt;
+                        }
+                        previousTimeOfDayMs = data.time_of_day_ms;
+                    }
+                    document.getElementById('current_lap_time').innerText = formatTime(currentLapTimeMs);
+                }
+
+                // Tires
+                function updateTire(id, temp) {
+                    if (temp === undefined) return;
+                    document.getElementById(id).innerText = temp.toFixed(0);
+                    const box = document.getElementById(id + '_box');
+                    // Simple color mapping: cold is gray/blue, hot is red
+                    if (temp < 50) box.style.color = '#34c759'; // Green/Coldish
+                    else if (temp < 90) box.style.color = '#ffcc00'; // Yellow/Warm
+                    else box.style.color = '#ff3b30'; // Red/Hot
+                }
+
+                updateTire('tire_fl', data.tire_fl_temp);
+                updateTire('tire_fr', data.tire_fr_temp);
+                updateTire('tire_rl', data.tire_rl_temp);
+                updateTire('tire_rr', data.tire_rr_temp);
+                
+                // Update Chart (limit to 10 FPS to save performance)
+                if (data.tire_fl_temp !== undefined) {
+                    chartTickCounter++;
+                    if (chartTickCounter % 2 === 0) {
+                        tireChart.data.labels.push('');
+                        tireChart.data.datasets[0].data.push(data.tire_fl_temp);
+                        tireChart.data.datasets[1].data.push(data.tire_fr_temp);
+                        tireChart.data.datasets[2].data.push(data.tire_rl_temp);
+                        tireChart.data.datasets[3].data.push(data.tire_rr_temp);
+
+                        if (tireChart.data.labels.length > MAX_CHART_POINTS) {
+                            tireChart.data.labels.shift();
+                            tireChart.data.datasets.forEach(dataset => dataset.data.shift());
+                        }
+                        tireChart.update();
+                    }
+                }
+            };
+        }
+
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>

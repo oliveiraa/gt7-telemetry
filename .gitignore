@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Database and data logs
+*.db
+*.sqlite3
+data/
+telemetry_log.csv
+server.log
+
+# Mac specific
+.DS_Store
+
+# Output charts
+*.png

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GT7 Telemetry Analyzer</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body {
+            background-color: #0f0f0f;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 5px; }
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        select, button {
+            background-color: #1e1e1e;
+            color: white;
+            border: 1px solid #333;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button { cursor: pointer; background-color: #0a84ff; border: none; font-weight: bold;}
+        button:hover { background-color: #0070e0; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        .chart-container {
+            background-color: #1e1e1e;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .nav-links a {
+            color: #888;
+            text-decoration: none;
+            margin-right: 15px;
+            font-weight: bold;
+        }
+        .nav-links a:hover { color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="nav-links">
+        <a href="/">← Back to Live Dashboard</a>
+    </div>
+
+    <div class="header-bar">
+        <div>
+            <h1>Post-Race Analyzer</h1>
+            <div style="color: #aaa;">Select a session below to view your telemetry</div>
+        </div>
+        <div>
+            <select id="sessionSelect">
+                <option value="">Loading sessions...</option>
+            </select>
+            <button onclick="loadSession()">Analyze</button>
+        </div>
+    </div>
+
+    <div class="grid" id="dashboard" style="display: none;">
+        <div class="chart-container">
+            <h3 style="margin-top: 0;">Pace Analysis: Speed vs Distance</h3>
+            <div id="speedChart" style="height: 400px;"></div>
+        </div>
+        
+        <div class="chart-container">
+            <h3 style="margin-top: 0;">Input Analysis: Throttle & Brake</h3>
+            <div id="inputsChart" style="height: 400px;"></div>
+        </div>
+        
+        <div class="chart-container">
+            <h3 style="margin-top: 0;">Racing Line & Braking Map</h3>
+            <div style="color: #888; font-size: 0.9em; margin-bottom: 10px;">Green = Throttle, Red = Brake, Blue = Coasting</div>
+            <div id="mapChart" style="height: 600px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Fetch available sessions on load
+        fetch('/api/sessions')
+            .then(res => res.json())
+            .then(data => {
+                const select = document.getElementById('sessionSelect');
+                select.innerHTML = '';
+                if(data.length === 0) {
+                    select.innerHTML = '<option value="">No sessions found</option>';
+                    return;
+                }
+                data.forEach(session => {
+                    const opt = document.createElement('option');
+                    opt.value = session.file;
+                    const date = new Date(session.start_time).toLocaleString();
+                    opt.textContent = `${date} - ${session.track_name} - ${session.car_name}`;
+                    select.appendChild(opt);
+                });
+            });
+
+        function loadSession() {
+            const file = document.getElementById('sessionSelect').value;
+            if (!file) return;
+            
+            document.getElementById('dashboard').style.display = 'grid';
+            
+            fetch(`/api/analyze?file=${encodeURIComponent(file)}`)
+                .then(res => res.json())
+                .then(data => {
+                    renderCharts(data);
+                });
+        }
+
+        function renderCharts(data) {
+            // Speed Chart
+            const speedTraces = data.laps.map(lap => ({
+                x: lap.distance,
+                y: lap.speed,
+                mode: 'lines',
+                name: `Lap ${lap.lap_number}`,
+                line: { width: lap.is_fastest ? 3 : 1, color: lap.is_fastest ? '#cc73e1' : undefined }
+            }));
+
+            Plotly.newPlot('speedChart', speedTraces, {
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                font: { color: '#fff' },
+                xaxis: { title: 'Distance (m)', gridcolor: '#333' },
+                yaxis: { title: 'Speed (km/h)', gridcolor: '#333' },
+                margin: { t: 10, b: 40, l: 50, r: 10 }
+            });
+
+            // Inputs Chart (showing fastest lap only to avoid clutter)
+            const fastestLap = data.laps.find(l => l.is_fastest) || data.laps[data.laps.length - 1];
+            if (fastestLap) {
+                const throttleTrace = {
+                    x: fastestLap.distance,
+                    y: fastestLap.throttle,
+                    mode: 'lines',
+                    name: 'Throttle',
+                    line: { color: '#34c759' },
+                    fill: 'tozeroy'
+                };
+                const brakeTrace = {
+                    x: fastestLap.distance,
+                    y: fastestLap.brake,
+                    mode: 'lines',
+                    name: 'Brake',
+                    line: { color: '#ff3b30' },
+                    fill: 'tozeroy'
+                };
+
+                Plotly.newPlot('inputsChart', [throttleTrace, brakeTrace], {
+                    paper_bgcolor: 'transparent',
+                    plot_bgcolor: 'transparent',
+                    font: { color: '#fff' },
+                    xaxis: { title: 'Distance (m)', gridcolor: '#333' },
+                    yaxis: { title: 'Input %', gridcolor: '#333', range: [0, 100] },
+                    margin: { t: 10, b: 40, l: 50, r: 10 }
+                });
+                
+                // Track Map (Scatter plot of X/Z coordinates colored by input)
+                const colors = fastestLap.throttle.map((t, i) => {
+                    const b = fastestLap.brake[i];
+                    if (b > 10) return 'red';
+                    if (t > 10) return 'green';
+                    return 'blue';
+                });
+
+                const mapTrace = {
+                    x: fastestLap.pos_x,
+                    y: fastestLap.pos_z, // Plotly usually expects y for the vertical axis of the chart
+                    mode: 'markers',
+                    marker: {
+                        color: colors,
+                        size: 4
+                    },
+                    type: 'scatter'
+                };
+
+                Plotly.newPlot('mapChart', [mapTrace], {
+                    paper_bgcolor: 'transparent',
+                    plot_bgcolor: 'transparent',
+                    font: { color: '#fff' },
+                    xaxis: { showgrid: false, zeroline: false, visible: false },
+                    yaxis: { showgrid: false, zeroline: false, visible: false, scaleanchor: 'x', scaleratio: 1 },
+                    margin: { t: 10, b: 10, l: 10, r: 10 },
+                    showlegend: false
+                });
+            }
+        }
+    </script>
+</body>
+</html>
